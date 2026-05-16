@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VR看房</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-tap-highlight-color: transparent; touch-action: none; user-select: none; -webkit-user-select: none; }
+#container { width: 100%; height: 100%; position: relative; overflow: hidden; }
+canvas { display: block; }
+
+#loading {
+  position: fixed; inset: 0; background: #0a0a0a;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 100; transition: opacity 0.5s;
+}
+#loading.hidden { opacity: 0; pointer-events: none; }
+.spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading p { color: rgba(255,255,255,0.6); font-size: 14px; margin-top: 16px; }
+
+#transition-overlay {
+  position: fixed; inset: 0; background: #000;
+  opacity: 0; pointer-events: none; z-index: 10;
+}
+
+#room-name {
+  position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+  color: #fff; font-size: 20px; font-weight: 500;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  z-index: 5; pointer-events: none;
+  background: rgba(0,0,0,0.4); padding: 8px 24px;
+  border-radius: 20px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+
+#hint {
+  position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+  color: rgba(255,255,255,0.7); font-size: 13px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  z-index: 5; pointer-events: none; transition: opacity 0.8s;
+}
+#hint.fade { opacity: 0; }
+
+#vr-btn {
+  position: fixed; bottom: 30px; right: 20px;
+  width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(0,0,0,0.5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1.5px solid rgba(255,255,255,0.3);
+  color: #fff; font-size: 20px;
+  display: none; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 15;
+  line-height: 48px; text-align: center;
+}
+#vr-btn:active { background: rgba(255,255,255,0.2); }
+#vr-btn.active { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.6); }
+
+/* ---- 编辑模式 ---- */
+#edit-panel {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  z-index: 20; display: none; gap: 8px; flex-wrap: wrap; justify-content: center;
+}
+#edit-panel.show { display: flex; }
+#edit-panel button {
+  background: rgba(0,0,0,0.6); color: #fff; border: 1px solid rgba(255,255,255,0.3);
+  padding: 6px 14px; border-radius: 16px; font-size: 13px; cursor: pointer;
+  white-space: nowrap;
+}
+#edit-panel button:active { background: rgba(255,255,255,0.25); }
+#edit-panel button.sel { background: #ff8800; border-color: #ff8800; }
+#edit-status {
+  position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
+  color: #ff8800; font-size: 13px; z-index: 20; pointer-events: none;
+  display: none; text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+}
+#edit-status.show { display: block; }
+</style>
+</head>
+<body>
+
+<div id="container"></div>
+<div id="room-name"></div>
+<div id="hint">拖拽查看四周 · 点击光点切换房间</div>
+<button id="vr-btn" title="VR模式">◉</button>
+<div id="transition-overlay"></div>
+<div id="edit-panel"></div>
+<div id="edit-status"></div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <p>正在加载...</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+<script>
+const DEG = Math.PI / 180;
+const SPHERE_R = 500;
+const HOTSPOT_R = 480;
+
+// ============================================================
+// 房间数据
+// ============================================================
+const ROOMS = {
+  living1: {
+    id: 'living1', name: '客厅1',
+    file: 'home/客厅1_000.jpg',
+    x: 6.58, y: 8.11, yaw: 153.44, pitch: -11.80,
+    connections: ['living2','kitchen','balcony','study','master_bed','guest_bed','kids']
+  },
+  living2: {
+    id: 'living2', name: '客厅2',
+    file: 'home/客厅2_000.jpg',
+    x: 4.06, y: 9.05, yaw: -91.65, pitch: -3.37,
+    connections: ['living1','kitchen','balcony','study','master_bed','guest_bed','kids']
+  },
+  kitchen:  { id: 'kitchen',  name: '厨房',  file: 'home/厨房_000.jpg',  x: 10.56, y: 8.11, yaw: 173.3,  pitch: 1.42,  connections: ['living1','living2'] },
+  balcony:  { id: 'balcony',  name: '阳台',  file: 'home/阳台_000.jpg',  x: 1.35,  y: 6.64, yaw: 16.42,  pitch: -3.07, connections: ['living1','living2'] },
+  study:    { id: 'study',    name: '书房',  file: 'home/书房_000.jpg',  x: 4.22,  y: 4.78, yaw: 89.82,  pitch: -6.01, connections: ['living1','living2'] },
+  master_bed:{id: 'master_bed',name:'主卧', file: 'home/主卧_000.jpg',  x: 4.43,  y: 1.81, yaw: 171.10, pitch: -15.81,connections: ['living1','living2'] },
+  guest_bed:{ id: 'guest_bed',name:'次卧', file: 'home/次卧_000.jpg',  x: 7.99,  y: 4.85, yaw: 25.65,  pitch: -11.26,connections: ['living1','living2'] },
+  kids:     { id: 'kids',     name:'儿童房',file: 'home/儿童房_000.jpg', x: 8.60,  y: 1.94, yaw: -30.35, pitch: -13.1, connections: ['living1','living2'] }
+};
+
+function calcBearing(from, to) {
+  return Math.atan2(to.y - from.y, to.x - from.x) / DEG;
+}
+
+function normalizeAngle(a) {
+  while (a > 180) a -= 360;
+  while (a < -180) a += 360;
+  return a;
+}
+
+// ============================================================
+// 手动校准数据 (localStorage)
+// ============================================================
+const LS_KEY = 'vr_hotspot_angles_v2';
+
+const DEFAULT_CALIBRATION = {"living1":{"living2":{"bearing":-38.06298551620773,"elevation":-31.5},"balcony":{"bearing":-15.574208516341173,"elevation":-10.5},"kitchen":{"bearing":151.89332824707031,"elevation":-9.166671752929688},"study":{"bearing":24.401123882984564,"elevation":-10.333343505859375},"master_bed":{"bearing":53.05008761133422,"elevation":-5.3333282470703125},"kids":{"bearing":71.85461674249939,"elevation":-3.1666717529296875},"guest_bed":{"bearing":88.78256622387914,"elevation":-3.5}},"living2":{"kitchen":{"bearing":82.75450999185571,"elevation":-6.6666717529296875},"guest_bed":{"bearing":48.74788722534308,"elevation":-0.49999237060546875},"kids":{"bearing":32.37640478790906,"elevation":-4},"study":{"bearing":0.2959105049034889,"elevation":-9.500007629394531},"master_bed":{"bearing":15.57555409302708,"elevation":-5.3333282470703125},"balcony":{"bearing":-51.2033404943179,"elevation":-23.5}},"balcony":{"living1":{"bearing":0.6124479777994338,"elevation":-14},"living2":{"bearing":18.560003011541482,"elevation":-24.333328247070312}},"study":{"living2":{"bearing":2.6592387519738168,"elevation":-19.333328247070312},"living1":{"bearing":-40.312204364085765,"elevation":-17.666671752929688}},"kids":{"living1":{"bearing":122.47796024835881,"elevation":-13.833328247070312},"living2":{"bearing":158.74307654083873,"elevation":-11.333335876464844}},"master_bed":{"living1":{"bearing":-108.77655362401732,"elevation":-4.8333282470703125},"living2":{"bearing":-79.1744459069729,"elevation":-2.4999923706054688}},"guest_bed":{"living2":{"bearing":123.61454371948369,"elevation":1.1666717529296875},"living1":{"bearing":90.23922271801973,"elevation":-10.666656494140625}},"kitchen":{"living2":{"bearing":1.6378534977150707,"elevation":-14},"living1":{"bearing":10.699999999999989,"elevation":-20}}};
+
+function loadCalibration() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return JSON.parse(JSON.stringify(DEFAULT_CALIBRATION));
+}
+function saveCalibration(data) {
+  localStorage.setItem(LS_KEY, JSON.stringify(data));
+}
+
+// calibration[roomId][targetId] = { bearing: 角度值 (相对于图像中心, 正=右) }
+// bearing=0 → 图像中心, bearing=90 → 图像右侧 (u=0.75), bearing=-90 → 图像左侧 (u=0.25)
+let calibration = loadCalibration();
+
+// ============================================================
+// 状态
+// ============================================================
+let currentRoom = 'living1';
+let userYaw = 0;
+let userPitch = 0;
+let isTransitioning = false;
+let gyroEnabled = false;
+let textureCache = {};
+let editMode = false;
+let selectedIdx = 0; // 当前选中的路标索引 (0-based)
+let hotspotData = []; // [{ targetId, name }, ...] 当前房间的路标数据
+let draggingHotspot = false;
+let dragHotspotIdx = -1;
+let dragStartBearing = 0;
+let dragStartElevation = 0;
+let dragStartX = 0;
+let dragStartY = 0;
+
+// ============================================================
+// DOM
+// ============================================================
+const container   = document.getElementById('container');
+const overlay     = document.getElementById('transition-overlay');
+const roomNameEl  = document.getElementById('room-name');
+const hintEl      = document.getElementById('hint');
+const vrBtn       = document.getElementById('vr-btn');
+const loadingEl   = document.getElementById('loading');
+const editPanel   = document.getElementById('edit-panel');
+const editStatus  = document.getElementById('edit-status');
+
+// ============================================================
+// Three.js 初始化
+// ============================================================
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+container.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+camera.position.set(0, 0, 0);
+camera.rotation.order = 'YXZ';
+
+const rig = new THREE.Group();
+scene.add(rig);
+
+const sphereGeo = new THREE.SphereGeometry(SPHERE_R, 128, 64);
+const texLoader = new THREE.TextureLoader();
+
+let sphere, material;
+let hotspotSprites = [];
+
+const raycaster = new THREE.Raycaster();
+raycaster.far = SPHERE_R + 50;
+
+// ============================================================
+// 纹理加载
+// ============================================================
+function loadTexture(roomId) {
+  if (textureCache[roomId]) return Promise.resolve(textureCache[roomId]);
+  return new Promise((resolve, reject) => {
+    texLoader.load(
+      ROOMS[roomId].file,
+      (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.repeat.x = -1;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        textureCache[roomId] = tex;
+        resolve(tex);
+      },
+      undefined,
+      () => reject(new Error('加载失败: ' + ROOMS[roomId].file))
+    );
+  });
+}
+
+// ============================================================
+// Sprite 纹理
+// ============================================================
+function makeTex(name, color) {
+  const S = 128;
+  const c = document.createElement('canvas');
+  c.width = S; c.height = S;
+  const ctx = c.getContext('2d');
+  const cx = S/2, cy = 30;
+  const g1 = ctx.createRadialGradient(cx, cy, 8, cx, cy, 42);
+  g1.addColorStop(0, 'rgba(255,255,255,1)');
+  g1.addColorStop(0.25, color || 'rgba(255,220,80,0.9)');
+  g1.addColorStop(0.6, 'rgba(255,160,30,0.3)');
+  g1.addColorStop(1, 'rgba(255,140,20,0)');
+  ctx.fillStyle = g1; ctx.beginPath(); ctx.arc(cx, cy, 42, 0, Math.PI*2); ctx.fill();
+  const g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, 12);
+  g2.addColorStop(0, 'white');
+  g2.addColorStop(0.6, 'rgba(255,240,180,0.8)');
+  g2.addColorStop(1, 'rgba(255,200,80,0)');
+  ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(cx, cy, 12, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 22px -apple-system, "PingFang SC", sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = 6;
+  ctx.fillText(name, cx, cy + 32);
+  // 编辑模式下显示序号
+  if (editMode && name.match(/^\d/)) {
+    ctx.fillStyle = '#ff8800';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('[按键' + name.charAt(0) + ']', cx, cy + 58);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
+  return t;
+}
+
+const texCache = {};
+function getTex(name, color) {
+  const k = name + (color||'');
+  if (!texCache[k]) texCache[k] = makeTex(name, color);
+  return texCache[k];
+}
+
+// ============================================================
+// 场景构建
+// ============================================================
+function calcHotspotPos(bearing, elevation) {
+  const rel = bearing * DEG;
+  const elev = (elevation != null ? elevation : -30) * DEG;
+  return new THREE.Vector3(
+    HOTSPOT_R * Math.cos(elev) * Math.cos(rel),
+    HOTSPOT_R * Math.sin(elev),
+    HOTSPOT_R * Math.cos(elev) * Math.sin(rel)
+  );
+}
+
+async function buildScene(roomId) {
+  const room = ROOMS[roomId];
+  const tex = await loadTexture(roomId);
+
+  if (sphere) { rig.remove(sphere); material.dispose(); }
+  hotspotSprites.forEach(s => rig.remove(s));
+  hotspotSprites = [];
+
+  material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide });
+  sphere = new THREE.Mesh(sphereGeo, material);
+  rig.add(sphere);
+
+  // 收集路标数据
+  hotspotData = [];
+
+  room.connections.forEach((targetId, idx) => {
+    const target = ROOMS[targetId];
+    const saved = (calibration[roomId] && calibration[roomId][targetId] != null)
+      ? calibration[roomId][targetId]
+      : null;
+    const savedBearing = saved != null ? (typeof saved === 'number' ? saved : saved.bearing) : null;
+    const savedElev = saved != null && typeof saved === 'object' ? saved.elevation : null;
+
+    const bearing = savedBearing != null
+      ? savedBearing
+      : (calcBearing(room, target) - room.yaw);
+    const elevation = savedElev != null ? savedElev : -30;
+
+    hotspotData.push({ targetId, name: target.name, bearing, elevation });
+
+    const label = editMode ? (idx+1) + ' ' + target.name : target.name;
+    const color = editMode && idx === selectedIdx
+      ? 'rgba(255,136,0,0.9)' : undefined;
+
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: getTex(label, color),
+      transparent: true, depthTest: false, depthWrite: false
+    }));
+    sprite.position.copy(calcHotspotPos(bearing, elevation));
+    sprite.scale.set(editMode ? 65 : 55, editMode ? 65 : 55, 1);
+    sprite.userData = { targetId, name: target.name, isHotspot: true, idx };
+    rig.add(sprite);
+    hotspotSprites.push(sprite);
+  });
+
+  updateRigRotation();
+  updateEditUI();
+}
+
+function refreshAllSprites() {
+  // 重新生成所有sprite纹理（编辑模式切换时）
+  hotspotSprites.forEach(s => {
+    const d = s.userData;
+    const label = editMode ? (d.idx+1) + ' ' + d.name : d.name;
+    const color = editMode && d.idx === selectedIdx
+      ? 'rgba(255,136,0,0.9)' : undefined;
+    s.material.map = getTex(label, color);
+    s.material.needsUpdate = true;
+    s.scale.set(editMode ? 65 : 55, editMode ? 65 : 55, 1);
+  });
+}
+
+function snapSelectedHotspot() {
+  if (!editMode || selectedIdx >= hotspotData.length) return;
+  hotspotData[selectedIdx].bearing = userYaw;
+  hotspotData[selectedIdx].elevation = userPitch;
+
+  if (!calibration[currentRoom]) calibration[currentRoom] = {};
+  calibration[currentRoom][hotspotData[selectedIdx].targetId] = { bearing: userYaw, elevation: userPitch };
+  saveCalibration(calibration);
+
+  const s = hotspotSprites[selectedIdx];
+  s.position.copy(calcHotspotPos(userYaw, userPitch));
+  refreshAllSprites();
+  updateEditUI();
+}
+
+function updateRigRotation() {
+  rig.rotation.y = userYaw * DEG + Math.PI / 2;
+  camera.rotation.x = userPitch * DEG;
+}
+
+// ============================================================
+// 编辑模式
+// ============================================================
+function toggleEditMode() {
+  editMode = !editMode;
+  if (editMode) {
+    editPanel.classList.add('show');
+    editStatus.classList.add('show');
+    hintEl.classList.add('fade');
+    selectedIdx = 0;
+  } else {
+    editPanel.classList.remove('show');
+    editStatus.classList.remove('show');
+    hintEl.classList.remove('fade');
+  }
+  refreshAllSprites();
+  updateEditUI();
+}
+
+function updateEditUI() {
+  if (!editMode) return;
+
+  // 状态提示
+  const d = hotspotData[selectedIdx];
+  editStatus.textContent = '编辑: [' + (selectedIdx+1) + '] ' + (d ? d.name : '') +
+    ' | 鼠标拖拽路标 | ←→ 微调 | 空格=吸附 | S=保存 | E=退出';
+
+  // 按钮面板
+  let html = '<button onclick="toggleEditMode()">退出编辑</button>';
+  hotspotData.forEach((hd, i) => {
+    const cls = i === selectedIdx ? ' sel' : '';
+    html += '<button class="' + cls + '" onclick="selectHotspot(' + i + ')">' +
+      (i+1) + '. ' + hd.name + '</button>';
+  });
+  html += '<button onclick="snapSelectedHotspot()">吸附到中央</button>';
+  editPanel.innerHTML = html;
+}
+
+function selectHotspot(idx) {
+  selectedIdx = idx;
+  refreshAllSprites();
+  updateEditUI();
+}
+
+// 键盘操作
+function onKeyDown(e) {
+  if (e.key === "e" || e.key === "E") {
+    if (!isTransitioning) toggleEditMode();
+    return;
+  }
+  if (!editMode || isTransitioning) return;
+
+  const key = e.key;
+  // 数字键选路标
+  if (key >= '1' && key <= '9') {
+    const idx = parseInt(key) - 1;
+    if (idx < hotspotData.length) {
+      selectHotspot(idx);
+    }
+    return;
+  }
+
+  const STEP = 2;
+
+  switch (key) {
+    case ' ':
+      e.preventDefault();
+      snapSelectedHotspot();
+      break;
+    case 'ArrowLeft':
+      e.preventDefault();
+      hotspotData[selectedIdx].bearing -= STEP;
+      break;
+    case 'ArrowRight':
+      e.preventDefault();
+      hotspotData[selectedIdx].bearing += STEP;
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      hotspotData[selectedIdx].elevation = Math.min(85, hotspotData[selectedIdx].elevation + STEP);
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      hotspotData[selectedIdx].elevation = Math.max(-85, hotspotData[selectedIdx].elevation - STEP);
+      break;
+    case 's':
+    case 'S':
+      saveCalibration(calibration);
+      editStatus.textContent = '已保存!';
+      setTimeout(updateEditUI, 800);
+      return;
+    case 'e':
+    case 'E':
+      toggleEditMode();
+      return;
+    default:
+      return;
+  }
+
+  if (!calibration[currentRoom]) calibration[currentRoom] = {};
+  calibration[currentRoom][hotspotData[selectedIdx].targetId] = {
+    bearing: hotspotData[selectedIdx].bearing,
+    elevation: hotspotData[selectedIdx].elevation
+  };
+
+  const s = hotspotSprites[selectedIdx];
+  s.position.copy(calcHotspotPos(hotspotData[selectedIdx].bearing, hotspotData[selectedIdx].elevation));
+  updateEditUI();
+}
+
+window.addEventListener('keydown', onKeyDown);
+
+// 编辑按钮：双击屏幕进入编辑模式
+let clickTimer = null;
+function onDblClick(e) {
+  if (isTransitioning) return;
+  toggleEditMode();
+}
+container.addEventListener('dblclick', onDblClick);
+
+// ============================================================
+// 路标点击检测
+// ============================================================
+function checkClick(clientX, clientY) {
+  const mouse = new THREE.Vector2(
+    (clientX / window.innerWidth) * 2 - 1,
+    -(clientY / window.innerHeight) * 2 + 1
+  );
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(hotspotSprites);
+  if (hits.length > 0) {
+    const hit = hits[0].object;
+    if (hit.userData.isHotspot) {
+      if (editMode) {
+        selectHotspot(hit.userData.idx);
+      } else {
+        const targetId = hit.userData.targetId;
+        if (!isTransitioning && targetId !== currentRoom) {
+          navigateTo(targetId);
+        }
+      }
+    }
+  }
+}
+
+// ============================================================
+// 房间切换
+// ============================================================
+async function navigateTo(targetId) {
+  if (isTransitioning || targetId === currentRoom) return;
+  isTransitioning = true;
+
+  overlay.style.transition = 'opacity 0.35s';
+  overlay.style.opacity = '1';
+  await delay(400);
+
+  currentRoom = targetId;
+  userYaw = 0;
+  userPitch = 0;
+  await buildScene(targetId);
+  roomNameEl.textContent = ROOMS[targetId].name;
+
+  overlay.style.transition = 'opacity 0.45s';
+  overlay.style.opacity = '0';
+  await delay(500);
+  isTransitioning = false;
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ============================================================
+// 输入处理
+// ============================================================
+let dragging = false, pointerMoved = false;
+let dragX = 0, dragY = 0;
+const DRAG_SPEED = 0.25;
+const MAX_PITCH = 80;
+
+function onPointerDown(e) {
+  if (isTransitioning || gyroEnabled) return;
+
+  // 编辑模式：检测是否点击到路标，是则开始拖拽
+  if (editMode) {
+    const mouse = new THREE.Vector2(
+      (e.clientX / window.innerWidth) * 2 - 1,
+      -(e.clientY / window.innerHeight) * 2 + 1
+    );
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(hotspotSprites);
+    if (hits.length > 0) {
+      const hit = hits[0].object;
+      if (hit.userData.isHotspot) {
+        draggingHotspot = true;
+        dragHotspotIdx = hit.userData.idx;
+        dragStartBearing = hotspotData[dragHotspotIdx].bearing;
+        dragStartElevation = hotspotData[dragHotspotIdx].elevation;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        selectHotspot(dragHotspotIdx);
+        return;
+      }
+    }
+  }
+
+  dragging = true;
+  pointerMoved = false;
+  dragX = e.clientX;
+  dragY = e.clientY;
+}
+
+function onPointerMove(e) {
+  if (isTransitioning || gyroEnabled) return;
+
+  if (draggingHotspot) {
+    const dx = e.clientX - dragStartX;
+    const dy = e.clientY - dragStartY;
+    const newBearing = normalizeAngle(dragStartBearing + dx * DRAG_SPEED);
+    const newElevation = Math.max(-85, Math.min(85, dragStartElevation - dy * DRAG_SPEED));
+    hotspotData[dragHotspotIdx].bearing = newBearing;
+    hotspotData[dragHotspotIdx].elevation = newElevation;
+    const s = hotspotSprites[dragHotspotIdx];
+    s.position.copy(calcHotspotPos(newBearing, newElevation));
+    if (!calibration[currentRoom]) calibration[currentRoom] = {};
+    calibration[currentRoom][hotspotData[dragHotspotIdx].targetId] = { bearing: newBearing, elevation: newElevation };
+    updateEditUI();
+    return;
+  }
+
+  if (!dragging || gyroEnabled) return;
+  const dx = e.clientX - dragX;
+  const dy = e.clientY - dragY;
+  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) pointerMoved = true;
+  dragX = e.clientX;
+  dragY = e.clientY;
+
+  userYaw += dx * DRAG_SPEED;
+  userPitch -= dy * DRAG_SPEED;
+  userPitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, userPitch));
+  userYaw = normalizeAngle(userYaw);
+  updateRigRotation();
+}
+
+function onPointerUp(e) {
+  if (draggingHotspot) {
+    draggingHotspot = false;
+    saveCalibration(calibration);
+    dragHotspotIdx = -1;
+    return;
+  }
+
+  if (!dragging) return;
+  dragging = false;
+  if (!pointerMoved) checkClick(e.clientX, e.clientY);
+}
+
+function onWheel(e) {
+  if (isTransitioning || gyroEnabled) return;
+  camera.fov = Math.max(35, Math.min(100, camera.fov + e.deltaY * 0.05));
+  camera.updateProjectionMatrix();
+}
+
+let pinchDist = 0;
+function onTouchStart(e) {
+  if (e.touches.length === 2) {
+    dragging = false;
+    draggingHotspot = false;
+    pinchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    return;
+  }
+  if (e.touches.length === 1) onPointerDown(e.touches[0]);
+}
+
+function onTouchMove(e) {
+  if (e.touches.length === 2) {
+    const d = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    camera.fov = Math.max(35, Math.min(100, camera.fov + (pinchDist - d) * 0.1));
+    camera.updateProjectionMatrix();
+    pinchDist = d;
+    return;
+  }
+  if (e.touches.length === 1 && (dragging || draggingHotspot)) onPointerMove(e.touches[0]);
+}
+
+function onTouchEnd(e) {
+  if (draggingHotspot) {
+    draggingHotspot = false;
+    saveCalibration(calibration);
+    dragHotspotIdx = -1;
+    return;
+  }
+  if (!dragging) return;
+  dragging = false;
+  if (!pointerMoved && e.changedTouches.length === 1) {
+    checkClick(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+  }
+}
+
+// ============================================================
+// 陀螺仪 VR
+// ============================================================
+let gyroBaseAlpha = null, gyroBaseYaw = 0, gyroBasePitch = 0;
+
+function onDeviceOrientation(e) {
+  if (!gyroEnabled || isTransitioning) return;
+  const alpha = e.alpha || 0;
+  const beta  = e.beta  || 0;
+
+  if (gyroBaseAlpha === null) {
+    gyroBaseAlpha = alpha;
+    gyroBaseYaw   = userYaw;
+    gyroBasePitch = userPitch;
+  }
+  let da = alpha - gyroBaseAlpha;
+  if (da > 180) da -= 360;
+  if (da < -180) da += 360;
+
+  userYaw   = gyroBaseYaw - da;
+  userPitch = gyroBasePitch - beta;
+  userPitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, userPitch));
+  userYaw   = normalizeAngle(userYaw);
+  updateRigRotation();
+}
+
+function requestGyro() {
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission()
+      .then(s => { if (s === 'granted') enableGyro(); })
+      .catch(() => {});
+  } else {
+    enableGyro();
+  }
+}
+function enableGyro() {
+  gyroEnabled = true; gyroBaseAlpha = null;
+  window.addEventListener('deviceorientation', onDeviceOrientation);
+  vrBtn.classList.add('active');
+}
+function disableGyro() {
+  gyroEnabled = false;
+  window.removeEventListener('deviceorientation', onDeviceOrientation);
+  vrBtn.classList.remove('active');
+}
+vrBtn.addEventListener('click', () => gyroEnabled ? disableGyro() : requestGyro());
+if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) vrBtn.style.display = 'flex';
+
+// ============================================================
+// 事件绑定
+// ============================================================
+renderer.domElement.addEventListener('pointerdown', onPointerDown);
+window.addEventListener('pointermove', onPointerMove);
+window.addEventListener('pointerup', onPointerUp);
+window.addEventListener('wheel', onWheel, { passive: true });
+renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
+renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
+renderer.domElement.addEventListener('touchend', onTouchEnd);
+
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+setTimeout(() => hintEl.classList.add('fade'), 8000);
+container.addEventListener('pointerdown', () => hintEl.classList.add('fade'), { once: true });
+
+// ============================================================
+// 渲染循环 & 启动
+// ============================================================
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+
+async function start() {
+  if (typeof THREE === 'undefined') {
+    loadingEl.innerHTML = '<p style="color:#f66">Three.js 未载入</p><p style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:8px">CDN 被屏蔽,请检查网络</p>';
+    return;
+  }
+  try {
+    await buildScene(currentRoom);
+    roomNameEl.textContent = ROOMS[currentRoom].name;
+    Object.keys(ROOMS).forEach(id => {
+      if (id !== currentRoom) loadTexture(id).catch(() => {});
+    });
+    loadingEl.classList.add('hidden');
+    setTimeout(() => loadingEl.remove(), 600);
+  } catch (err) {
+    console.error(err);
+    loadingEl.innerHTML = '<p style="color:#f66">载入失败</p><p style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:8px">' + (err.message || err) + '</p>';
+  }
+}
+
+start();
+animate();
+</script>
+</body>
+</html>
