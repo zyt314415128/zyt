@@ -678,7 +678,8 @@ function onTouchEnd(e) {
 // ============================================================
 // 陀螺仪 VR
 // ============================================================
-let gyroBaseAlpha = null, gyroBaseYaw = 0, gyroBasePitch = 0;
+let gyroBaseAlpha = null, gyroBaseBeta = 0, gyroBaseYaw = 0, gyroBasePitch = 0;
+let gyroBetaReady = false;
 
 function onDeviceOrientation(e) {
   if (!gyroEnabled || isTransitioning) return;
@@ -690,12 +691,18 @@ function onDeviceOrientation(e) {
     gyroBaseYaw   = userYaw;
     gyroBasePitch = userPitch;
   }
+  if (!gyroBetaReady) {
+    gyroBaseBeta = beta;
+    gyroBetaReady = true;
+    return;
+  }
+
   let da = alpha - gyroBaseAlpha;
   if (da > 180) da -= 360;
   if (da < -180) da += 360;
 
   userYaw   = gyroBaseYaw - da;
-  userPitch = gyroBasePitch + beta;
+  userPitch = gyroBasePitch + (beta - gyroBaseBeta);
   userPitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, userPitch));
   userYaw   = normalizeAngle(userYaw);
   updateRigRotation();
@@ -712,7 +719,7 @@ function requestGyro() {
   }
 }
 function enableGyro() {
-  gyroEnabled = true; gyroBaseAlpha = null;
+  gyroEnabled = true; gyroBaseAlpha = null; gyroBetaReady = false;
   window.addEventListener('deviceorientation', onDeviceOrientation);
   vrBtn.classList.add('active');
 }
