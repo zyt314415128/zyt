@@ -694,7 +694,7 @@ function onDeviceOrientation(e) {
   if (da > 180) da -= 360;
   if (da < -180) da += 360;
 
-  userYaw   = gyroBaseYaw + da;
+  userYaw   = gyroBaseYaw - da;
   userPitch = gyroBasePitch + beta;
   userPitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, userPitch));
   userYaw   = normalizeAngle(userYaw);
