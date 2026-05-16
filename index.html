@@ -678,7 +678,7 @@ function onTouchEnd(e) {
 // ============================================================
 // 陀螺仪 VR
 // ============================================================
-let gyroBaseAlpha = null, gyroBaseYaw = 0, gyroBasePitch = 0;
+let gyroBaseAlpha = null, gyroBaseBeta = 0, gyroBaseYaw = 0, gyroBasePitch = 0;
 
 function onDeviceOrientation(e) {
   if (!gyroEnabled || isTransitioning) return;
@@ -687,6 +687,7 @@ function onDeviceOrientation(e) {
 
   if (gyroBaseAlpha === null) {
     gyroBaseAlpha = alpha;
+    gyroBaseBeta  = beta;
     gyroBaseYaw   = userYaw;
     gyroBasePitch = userPitch;
   }
@@ -694,8 +695,8 @@ function onDeviceOrientation(e) {
   if (da > 180) da -= 360;
   if (da < -180) da += 360;
 
-  userYaw   = gyroBaseYaw - da;
-  userPitch = gyroBasePitch + beta;
+  userYaw   = gyroBaseYaw + da;
+  userPitch = gyroBasePitch + (beta - gyroBaseBeta);
   userPitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, userPitch));
   userYaw   = normalizeAngle(userYaw);
   updateRigRotation();
