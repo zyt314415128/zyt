@@ -202,7 +202,7 @@ camera.rotation.order = 'YXZ';
 const rig = new THREE.Group();
 scene.add(rig);
 
-const sphereGeo = new THREE.SphereGeometry(SPHERE_R, 128, 64);
+const sphereGeo = new THREE.SphereGeometry(SPHERE_R, 256, 128);
 const texLoader = new THREE.TextureLoader();
 
 let sphere, material;
@@ -225,6 +225,8 @@ function loadTexture(roomId) {
         tex.repeat.x = -1;
         tex.minFilter = THREE.LinearMipmapLinearFilter;
         tex.magFilter = THREE.LinearFilter;
+        tex.generateMipmaps = true;
+        tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
         textureCache[roomId] = tex;
         resolve(tex);
       },
