@@ -631,7 +631,7 @@ function onPointerUp(e) {
 
 function onWheel(e) {
   if (isTransitioning || gyroEnabled) return;
-  camera.fov = Math.max(35, Math.min(100, camera.fov + e.deltaY * 0.05));
+  camera.fov = Math.max(10, Math.min(100, camera.fov + e.deltaY * 0.05));
   camera.updateProjectionMatrix();
 }
 
@@ -655,7 +655,7 @@ function onTouchMove(e) {
       e.touches[0].clientX - e.touches[1].clientX,
       e.touches[0].clientY - e.touches[1].clientY
     );
-    camera.fov = Math.max(35, Math.min(100, camera.fov + (pinchDist - d) * 0.1));
+    camera.fov = Math.max(10, Math.min(100, camera.fov + (pinchDist - d) * 0.1));
     camera.updateProjectionMatrix();
     pinchDist = d;
     return;
