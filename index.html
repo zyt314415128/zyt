@@ -104,22 +104,22 @@ const HOTSPOT_R = 480;
 const ROOMS = {
   living1: {
     id: 'living1', name: '客厅1',
-    file: 'home/客厅1_000.jpg',
+    file: 'home/客厅1.jpg',
     x: 6.58, y: 8.11, yaw: 153.44, pitch: -11.80,
     connections: ['living2','kitchen','balcony','study','master_bed','guest_bed','kids']
   },
   living2: {
     id: 'living2', name: '客厅2',
-    file: 'home/客厅2_000.jpg',
+    file: 'home/客厅2.jpg',
     x: 4.06, y: 9.05, yaw: -91.65, pitch: -3.37,
     connections: ['living1','kitchen','balcony','study','master_bed','guest_bed','kids']
   },
-  kitchen:  { id: 'kitchen',  name: '厨房',  file: 'home/厨房_000.jpg',  x: 10.56, y: 8.11, yaw: 173.3,  pitch: 1.42,  connections: ['living1','living2'] },
-  balcony:  { id: 'balcony',  name: '阳台',  file: 'home/阳台_000.jpg',  x: 1.35,  y: 6.64, yaw: 16.42,  pitch: -3.07, connections: ['living1','living2'] },
-  study:    { id: 'study',    name: '书房',  file: 'home/书房_000.jpg',  x: 4.22,  y: 4.78, yaw: 89.82,  pitch: -6.01, connections: ['living1','living2'] },
-  master_bed:{id: 'master_bed',name:'主卧', file: 'home/主卧_000.jpg',  x: 4.43,  y: 1.81, yaw: 171.10, pitch: -15.81,connections: ['living1','living2'] },
-  guest_bed:{ id: 'guest_bed',name:'次卧', file: 'home/次卧_000.jpg',  x: 7.99,  y: 4.85, yaw: 25.65,  pitch: -11.26,connections: ['living1','living2'] },
-  kids:     { id: 'kids',     name:'儿童房',file: 'home/儿童房_000.jpg', x: 8.60,  y: 1.94, yaw: -30.35, pitch: -13.1, connections: ['living1','living2'] }
+  kitchen:  { id: 'kitchen',  name: '厨房',  file: 'home/厨房.jpg',  x: 10.56, y: 8.11, yaw: 173.3,  pitch: 1.42,  connections: ['living1','living2'] },
+  balcony:  { id: 'balcony',  name: '阳台',  file: 'home/阳台.jpg',  x: 1.35,  y: 6.64, yaw: 16.42,  pitch: -3.07, connections: ['living1','living2'] },
+  study:    { id: 'study',    name: '书房',  file: 'home/书房.jpg',  x: 4.22,  y: 4.78, yaw: 89.82,  pitch: -6.01, connections: ['living1','living2'] },
+  master_bed:{id: 'master_bed',name:'主卧', file: 'home/主卧.jpg',  x: 4.43,  y: 1.81, yaw: 171.10, pitch: -15.81,connections: ['living1','living2'] },
+  guest_bed:{ id: 'guest_bed',name:'次卧', file: 'home/次卧.jpg',  x: 7.99,  y: 4.85, yaw: 25.65,  pitch: -11.26,connections: ['living1','living2'] },
+  kids:     { id: 'kids',     name:'儿童房',file: 'home/儿童房.jpg', x: 8.60,  y: 1.94, yaw: -30.35, pitch: -13.1, connections: ['living1','living2'] }
 };
 
 function calcBearing(from, to) {
